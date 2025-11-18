@@ -2,7 +2,6 @@ import os
 import uuid
 import time
 import subprocess
-import signal
 import asyncio
 import logging
 from telegram import Update
@@ -20,20 +19,19 @@ RTSP = "rtsp://admin:83405822a@192.168.1.10:554/onvif1"
 TOKEN = "8514362677:AAFKMlQYO_esLAspOsPMEzQR8p8e4WtH2rA"
 CHAT = 951665102
 
-FFMPEG_PATH = r"C:\Users\Iguinho\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.0-full_build\bin\ffmpeg.exe"
+FFMPEG_PATH = "/usr/bin/ffmpeg"   # LINUX
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 
 # -----------------------------
-# VARIÁVEIS GLOBAIS
+# VARIÁVEIS
 # -----------------------------
 
 gravando = False
 ultimo_video = None
 mensagens_enviadas = []
-duracao_video = 1800  # 30 minutos
+duracao_video = 1800
 inicio_sistema = time.time()
-executando = True
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
@@ -44,12 +42,15 @@ def unique_name(ext):
 
 def gravar_video(duracao):
     nome = unique_name("mp4")
+
     cmd = [
         FFMPEG_PATH,
-        "-rtsp_transport", "udp",
+        "-rtsp_transport", "tcp",
         "-i", RTSP,
         "-t", str(duracao),
+        "-map", "0:v",
         "-vcodec", "copy",
+        "-an",
         nome
     ]
 
@@ -58,11 +59,13 @@ def gravar_video(duracao):
 
 def tirar_foto():
     nome = unique_name("jpg")
+
     cmd = [
         FFMPEG_PATH,
-        "-rtsp_transport", "udp",
+        "-rtsp_transport", "tcp",
         "-i", RTSP,
         "-frames:v", "1",
+        "-q:v", "2",
         nome
     ]
 
@@ -76,37 +79,31 @@ def deletar(path):
     except:
         pass
 
-def tempo_formatado(segundos):
-    h = segundos // 3600
-    m = (segundos % 3600) // 60
-    s = segundos % 60
+def tempo_formatado(seg):
+    h = seg // 3600
+    m = (seg % 3600) // 60
+    s = seg % 60
     return f"{h}h {m}m {s}s"
 
 # -----------------------------
-# SISTEMA DE COMANDOS TELEGRAM
+# COMANDOS DO BOT
 # -----------------------------
 
 COMANDOS = """
-Bem-vindo ao Sistema de Monitoramento.
-
 Comandos disponíveis:
 
 /iniciar — Inicia gravação contínua
 /parar — Para a gravação
-/limpar — Apaga mensagens do bot
-/foto — Foto ao vivo
-/videoteste — Vídeo rápido de 10s
+/limpar — Limpa mensagens
+/foto — Tira foto ao vivo
+/videoteste — Vídeo de 10s
 /ultimovideo — Reenvia o último vídeo
 /status — Status do sistema
-/resetar — Zera variáveis
+/resetar — Reseta tudo
 /listar — Lista mensagens enviadas
 /ping — Teste de conexão
-/tempo X — Muda duração dos vídeos
+/tempo X — Define duração dos vídeos
 """
-
-# -----------------------------
-# HANDLERS
-# -----------------------------
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(COMANDOS)
@@ -128,29 +125,18 @@ async def cmd_iniciar(update, context):
     global gravando
 
     if gravando:
-        await update.message.reply_text("A gravação já está ativa.")
+        await update.message.reply_text("Já está gravando.")
         return
 
     gravando = True
     await update.message.reply_text("Gravação iniciada.")
+
     context.application.create_task(loop_gravacao(context))
 
 async def cmd_parar(update, context):
     global gravando
     gravando = False
-    await update.message.reply_text("Gravação interrompida.")
-
-async def cmd_limpar(update, context):
-    apagadas = 0
-    for msg_id in mensagens_enviadas:
-        try:
-            await context.bot.delete_message(chat_id=CHAT, message_id=msg_id)
-            apagadas += 1
-        except:
-            pass
-
-    mensagens_enviadas.clear()
-    await update.message.reply_text(f"Mensagens apagadas: {apagadas}")
+    await update.message.reply_text("Gravação parada.")
 
 async def cmd_foto(update, context):
     foto = tirar_foto()
@@ -160,15 +146,25 @@ async def cmd_foto(update, context):
 
 async def cmd_videoteste(update, context):
     video = gravar_video(10)
-    msg = await context.bot.send_video(chat_id=CHAT, video=open(video, "rb"))
+    msg = await context.bot.send_video(chat_id=CHAT, photo=open(video, "rb"))
     mensagens_enviadas.append(msg.message_id)
     deletar(video)
 
-async def cmd_ultimovideo(update, context):
-    global ultimo_video
+async def cmd_limpar(update, context):
+    apagadas = 0
+    for mid in mensagens_enviadas:
+        try:
+            await context.bot.delete_message(chat_id=CHAT, message_id=mid)
+            apagadas += 1
+        except:
+            pass
 
+    mensagens_enviadas.clear()
+    await update.message.reply_text(f"Mensagens apagadas: {apagadas}")
+
+async def cmd_ultimovideo(update, context):
     if ultimo_video is None:
-        await update.message.reply_text("Ainda não existe vídeo anterior.")
+        await update.message.reply_text("Nenhum vídeo anterior.")
         return
 
     msg = await context.bot.send_video(chat_id=CHAT, video=open(ultimo_video, "rb"))
@@ -176,14 +172,16 @@ async def cmd_ultimovideo(update, context):
 
 async def cmd_status(update, context):
     uptime = tempo_formatado(int(time.time() - inicio_sistema))
-    txt = f"""
-Status do sistema:
 
-Gravando: {'Sim' if gravando else 'Não'}
-Vídeos enviados: {len(mensagens_enviadas)}
-Tempo ativo: {uptime}
-Duração dos vídeos: {duracao_video} segundos
+    txt = f"""
+Status:
+
+Gravando: {"Sim" if gravando else "Não"}
+Mensagens: {len(mensagens_enviadas)}
+Uptime: {uptime}
+Duração: {duracao_video}s
 """
+
     await update.message.reply_text(txt)
 
 async def cmd_resetar(update, context):
@@ -191,18 +189,14 @@ async def cmd_resetar(update, context):
     gravando = False
     ultimo_video = None
     mensagens_enviadas.clear()
-    await update.message.reply_text("Sistema resetado.")
+    await update.message.reply_text("Resetado.")
 
 async def cmd_listar(update, context):
     if not mensagens_enviadas:
-        await update.message.reply_text("Nenhuma mensagem enviada.")
+        await update.message.reply_text("Nenhuma mensagem armazenada.")
         return
 
-    texto = "Mensagens enviadas:\n"
-    for mid in mensagens_enviadas:
-        texto += f"{mid}\n"
-
-    await update.message.reply_text(texto)
+    await update.message.reply_text("\n".join(str(i) for i in mensagens_enviadas))
 
 async def cmd_ping(update, context):
     await update.message.reply_text("Online.")
@@ -212,13 +206,12 @@ async def cmd_tempo(update, context):
     try:
         novo = int(update.message.text.split()[1])
         duracao_video = novo
-        await update.message.reply_text(f"Duração alterada para {novo} segundos.")
+        await update.message.reply_text(f"Duração ajustada para {novo} segundos.")
     except:
-        await update.message.reply_text("Use: /tempo X")
-
+        await update.message.reply_text("Use: /tempo 120")
 
 # -----------------------------
-# EXECUÇÃO
+# MAIN
 # -----------------------------
 
 def main():
