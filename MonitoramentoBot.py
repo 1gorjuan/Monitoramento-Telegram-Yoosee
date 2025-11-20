@@ -15,8 +15,8 @@ from telegram.ext import (
 # CONFIGURAÇÕES DO USUÁRIO
 # -----------------------------
 
-RTSP = "rtsp://admin:83405822a@192.168.1.10:554/onvif1"
-TOKEN = "8514362677:AAFKMlQYO_esLAspOsPMEzQR8p8e4WtH2rA"
+RTSP = ""
+TOKEN = ""
 CHAT = 951665102
 
 FFMPEG_PATH = "/usr/bin/ffmpeg"   # LINUX

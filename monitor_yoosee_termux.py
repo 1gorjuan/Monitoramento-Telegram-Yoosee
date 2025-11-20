@@ -13,8 +13,8 @@ from telegram.ext import (
 # CONFIGURAÇÕES GERAIS
 # ==============================
 
-RTSP = "rtsp://admin:83405822a@192.168.1.10:554/onvif2"
-TOKEN = "8514362677:AAFKMlQYO_esLAspOsPMEzQR8p8e4WtH2rA"
+RTSP = "RTPS"
+TOKEN = "TOKEM"
 CHAT = 951665102
 
 DURACAO_VIDEO = 600  # 10 minutos em segundos
